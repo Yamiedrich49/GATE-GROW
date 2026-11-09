@@ -36,7 +36,7 @@ canvas{display:block;width:100%;height:100%;touch-action:none;cursor:crosshair}
  <div id="bottom"><div id="navigation"><span id="arrow">↑</span><div><div id="navlabel">NEXT TARGET · タップで切替</div><div id="navdistance">-- m</div></div></div><div id="ctrl">WASD / 左スティック：移動　 ·　 マウス / 右スティック：視点<br>TAB / L1：目標切替　 ·　 SPACE / A：回避　 ·　 J / RT：攻撃</div></div><div id="waterbar"><div id="waterfill"></div></div>
 </div>
 <div id="touch"><div class="pad" id="movePad"><i></i></div><div class="pad" id="aimPad"><i></i></div><div class="touchbtn" id="attackBtn">HIT</div><div class="touchbtn" id="dodgeBtn">DASH</div></div>
-<div id="intro"><div class="panel"><div class="eyebrow">A GAME MECHANIC EXPERIMENT</div><h1>GATE<br><span>GROW.</span></h1><div class="sub">大きくなれ。<br>ただし、早く大きくなるほどいいとは限らない。</div><p class="desc">緑の門は×2。金のコアは×3。強いコア保持者を複数人で倒すと、コアが地面に飛び散る。しかし戦利品は早い者勝ち。協力者が次のライバルになる。</p><div class="rule"><div><strong>緑の門 ×2</strong>各方向に分散。安全に巨大化できる</div><div><strong>金のコア ×3</strong>倒れた巨人から飛び散る。拾うのは早い者勝ち</div><div><strong>洪水</strong>時間が経つほど小さい身体は不利</div></div><button class="btn" id="startBtn">FREE GROWTH</button><button class="btn secondary" id="siegeBtn">GIANT HUNT · 3 vs 1</button><div class="footnote">ゲームパッド / キーボード対応。30人対戦ではなく、戦略の原理を試す1人＋CPUの検証版。</div></div></div>
+<div id="intro"><div class="panel"><div class="eyebrow">A GAME MECHANIC EXPERIMENT</div><h1>GATE<br><span>GROW.</span></h1><div class="sub">大きくなれ。<br>ただし、早く大きくなるほどいいとは限らない。</div><p class="desc">緑の門は×2。金のコアは×3。強いコア保持者を複数人で倒すと、コアが地面に飛び散る。しかし戦利品は早い者勝ち。協力者が次のライバルになる。</p><div class="rule"><div><strong>緑の門 ×2</strong>各方向に分散。安全に巨大化できる</div><div><strong>金のコア ×3</strong>倒れた巨人から飛び散る。拾うのは早い者勝ち</div><div><strong>洪水</strong>時間が経つほど小さい身体は不利</div></div><button class="btn" id="startBtn">FREE GROWTH</button><button class="btn secondary" id="siegeBtn">GIANT HUNT · CORE RAID</button><div class="footnote">ゲームパッド / キーボード対応。30人対戦ではなく、戦略の原理を試す1人＋CPUの検証版。</div></div></div>
 <div id="end"><div class="panel"><div class="eyebrow">EXPERIMENT COMPLETE</div><h2 id="endTitle">ROUND OVER</h2><div id="result"></div><button class="btn" id="retryBtn">PLAY AGAIN</button><div class="footnote">この版はゲーム性の評価用。多人数ネットワーク対戦や本格物理格闘は未実装。</div></div></div>
 <script>
 (()=>{'use strict';
@@ -133,7 +133,7 @@ function receiveCore(p,c,stolen=false){
  p.cool=Math.max(p.cool,1.45);p.inv=Math.max(p.inv,.65);p.stats.grow++;
  if(p===player){selectedGateId=null;sound('grow');flash=.65;
   if(!stolen)toast(`CORE ×3   ${Math.round(before)}m → ${Math.round(p.h)}m`,1.9);
-  $('indicator').textContent=stolen?'倒した巨人からコアを奪った！':'金のコア獲得。倒されると奪われる。';hintUntil=elapsed+3;}
+  $('indicator').textContent=stolen?'倒れた巨人がコアを落とした！':'金のコア獲得。倒されると地面に落とす。';hintUntil=elapsed+3;}
  return true;
 }
 function collectCore(p){if(p.dead||p.cool>0||p.coresTaken>=2)return false;
