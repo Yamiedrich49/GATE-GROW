@@ -94,7 +94,25 @@ window.addEventListener('keydown',e=>{keys[e.code]=true;if(['Space','ArrowUp','A
 canvas.addEventListener('pointerdown',e=>{pointer.down=true;pointer.x=e.clientX;pointer.y=e.clientY;canvas.setPointerCapture(e.pointerId)});canvas.addEventListener('pointermove',e=>{if(pointer.down){cameraYaw-=((e.clientX-pointer.x)/window.innerWidth)*3;cameraPitch=clamp(cameraPitch+((e.clientY-pointer.y)/window.innerHeight)*1.6,.12,.65);pointer.x=e.clientX;pointer.y=e.clientY}});canvas.addEventListener('pointerup',()=>pointer.down=false);
 for(let [id,key] of [['movePad','move'],['aimPad','look']]){let el=$(id),knob=el.querySelector('i');function move(e){let r=el.getBoundingClientRect(),x=(e.clientX-(r.left+r.width/2))/(r.width*.35),y=(e.clientY-(r.top+r.height/2))/(r.height*.35),m=Math.max(1,Math.hypot(x,y));joy[key]=[x/m,y/m];knob.style.transform=`translate(${joy[key][0]*22}px,${joy[key][1]*22}px)`}el.addEventListener('pointerdown',e=>{el.setPointerCapture(e.pointerId);move(e)});el.addEventListener('pointermove',e=>{if(el.hasPointerCapture(e.pointerId))move(e)});for(let event of ['pointerup','pointercancel'])el.addEventListener(event,()=>{joy[key]=[0,0];knob.style.transform='translate(0,0)'})}
 $('attackBtn').addEventListener('pointerdown',()=>{joy.attack=true});$('attackBtn').addEventListener('pointerup',()=>joy.attack=false);$('dodgeBtn').addEventListener('pointerdown',()=>{joy.dodge=true});$('dodgeBtn').addEventListener('pointerup',()=>joy.dodge=false);
-$('navigation').addEventListener('pointerdown',()=>{if(running)cycleGate()});$('startBtn').onclick=()=>{reset();initAudio();$('intro').style.display='none';running=true;last=performance.now();toast('門へ向かおう',1.7)};$('retryBtn').onclick=()=>{reset();initAudio();$('intro').style.display='none';running=true;last=performance.now();toast('もう一度',1.7)};
+$('navigation').addEventListener('pointerdown',()=>{if(running)cycleGate()});$('startBtn').onclick=()=>beginRound(false);$('siegeBtn').onclick=()=>beginRound(true);$('retryBtn').onclick=()=>beginRound(siegeMode);
+function prepareSiege(){
+ const boss=bots[0];
+ player.x=0;player.z=0;player.h=68;player.visualH=68;player.stage=5;player.health=100;
+ const locations=[[116,0,108],[48,-79,70],[48,79,70],[-33,-130,66],[-33,130,66]];
+ for(let i=0;i<bots.length;i++){
+  const b=bots[i],loc=locations[i];b.x=loc[0];b.z=loc[1];b.h=loc[2];b.visualH=b.h;
+  b.stage=Math.min(8,Math.floor(Math.log2(b.h/2)+1e-7));b.health=100;b.face=Math.atan2(-b.x,-b.z);b.focusId=null;
+ }
+ for(let i=0;i<2;i++){const c=cores[i];c.owner=boss.id;c.taken=true;c.dropped=false;c.dropCooldown=0;}
+ boss.coresTaken=2;cameraYaw=2.9;cameraPitch=.30;
+ $('sizeText').innerHTML='68<span class="unit">m</span>';
+ $('indicator').textContent='コア2個の巨人を狙え。協力して倒しても、コアは早い者勝ち。';hintUntil=6;
+}
+function beginRound(mode){
+ reset();siegeMode=!!mode;if(siegeMode)prepareSiege();initAudio();
+ $('intro').style.display='none';running=true;last=performance.now();
+ toast(siegeMode?'HUNT THE CORE HOLDER':'門へ向かおう',1.8);
+}
 function toast(message,time=1.2){$('centerToast').textContent=message;$('centerToast').style.opacity=1;$('centerToast').style.transform='translateY(0)';toastUntil=elapsed+time}
 function gateCandidates(p){return gates.filter(g=>g.k===p.stage&&!g.openedBy[p.id]).sort((a,b)=>dist(p.x,p.z,a.x,a.z)-dist(p.x,p.z,b.x,b.z))}
 function coreCandidates(p){return p.coresTaken>=2?[]:cores.filter(c=>!c.taken&&(c.dropped||c.k===p.stage)).sort((a,b)=>dist(p.x,p.z,a.x,a.z)-dist(p.x,p.z,b.x,b.z))}
@@ -166,6 +184,22 @@ function detourAroundBridge(p,tx,tz){
  return {x:tx,z:tz};
 }
 function moveCreature(p,dx,dz,dt,boost=1){let len=Math.hypot(dx,dz);if(len>.08){dx/=Math.max(1,len);dz/=Math.max(1,len);let speed=(9+Math.pow(p.h,0.72)*2.65)*boost;let prevX=p.x,prevZ=p.z;p.x+=dx*speed*dt;p.z+=dz*speed*dt;p.face=Math.atan2(dx,dz);collideWorld(p,prevX,prevZ);p.speed=lerp(p.speed,1,clamp(dt*9,0,1));}else p.speed=lerp(p.speed,0,clamp(dt*6,0,1))}
+function siegeTarget(p){
+ if(p.dead||p.coresTaken>=2)return null;
+ const actors=[player,...bots].filter(q=>!q.dead);
+ let selected=null,best=-Infinity;
+ for(const giant of actors){
+  if(giant===p||giant.coresTaken===0||giant.h<p.h*1.25||giant.h>p.h*4.1)continue;
+  const radius=Math.max(100,giant.h*3.5),d=dist(p.x,p.z,giant.x,giant.z);
+  if(d>radius)continue;
+  // Two or more smaller independent rivals share an incentive to attack.
+  const challengers=actors.filter(q=>q!==giant&&q.h>=giant.h*.23&&q.h<=giant.h*.95&&dist(q.x,q.z,giant.x,giant.z)<radius);
+  if(challengers.length<2)continue;
+  const score=giant.coresTaken*180-d*.42-giant.h/p.h*10;
+  if(score>best){selected=giant;best=score;}
+ }
+ return selected;
+}
 function attack(attacker,isHuman){if(attacker.dead||attacker.slash>0||attacker.cool>.6)return;attacker.slash=.76;attacker.attackAt=.43;attacker.stats.hits++;if(attacker===player)sound('attack');}
 function strike(attacker){let targets=attacker===player?bots:[player,...bots.filter(b=>b!==attacker)];if(attacker.focusId)targets=targets.filter(q=>q.id===attacker.focusId);let hit=false;for(let victim of targets){if(victim.dead||victim.inv>0)continue;let range=Math.max(3.2,attacker.h*.92)+victim.h*.25;let d=dist(attacker.x,attacker.z,victim.x,victim.z);if(d>range)continue;let angle=Math.atan2(victim.x-attacker.x,victim.z-attacker.z);let diff=Math.atan2(Math.sin(angle-attacker.face),Math.cos(angle-attacker.face));if(Math.abs(diff)>1.25)continue;let ratio=attacker.h/victim.h;let damage=ratio>=2.25?95:ratio>=1.25?42:ratio>=.8?28:12;victim.health-=damage;victim.inv=.47;let push=(3+Math.pow(attacker.h,.65)*2.6)*clamp(ratio,.4,3);victim.x+=Math.sin(angle)*push;victim.z+=Math.cos(angle)*push;collideWorld(victim,victim.x,victim.z);stompFX.push({x:victim.x,z:victim.z,h:victim.h,t:0,max:.6});hit=true;if(victim.health<=0)kill(victim,attacker);if(attacker===player){sound('hit');flash=.20;toast(ratio>=2.25?'CRUSH':ratio<.8?'小さい攻撃は不利':'HIT',.6)}}if(!hit&&attacker===player){/*miss*/}}
 function kill(victim,by){
@@ -197,10 +231,36 @@ function step(dt){if(!running)return;dt=Math.min(.06,dt);elapsed+=dt;sea=Math.po
  const wantAttack=keys.KeyJ||joy.attack||(pad&&((pad.buttons[7]&&pad.buttons[7].value>.3)||(pad.buttons[5]&&pad.buttons[5].pressed)));if(wantAttack&&!gamepadAttack)attack(player,true);gamepadAttack=!!wantAttack;
  for(let c of cores)if(c.dropCooldown>0)c.dropCooldown=Math.max(0,c.dropCooldown-dt);
  for(let p of [player,...bots]){if(p.dead)continue;p.cool=Math.max(0,p.cool-dt);p.inv=Math.max(0,p.inv-dt);p.sprint=Math.max(0,p.sprint-dt);let oldSlash=p.slash;p.slash=Math.max(0,p.slash-dt);if(oldSlash>.43&&p.slash<=.43)strike(p);p.visualH=lerp(p.visualH,p.h,clamp(dt*5,0,1));let ground=terrain(p.x,p.z);let waterDepth=sea-ground;let safe=(waterDepth<p.h*.69);if(safe){p.drown=Math.max(0,p.drown-dt*2.2);p.health=Math.min(100,p.health+dt*.8)}else{p.drown+=dt;p.health-=dt*(17+Math.max(0,waterDepth-p.h*.69)*.15);if(p===player&&elapsed-hintUntil>1.1){$('indicator').textContent='水面が迫る。もっと大きく！';hintUntil=elapsed+1.7}if(p.health<=0)kill(p,null)}}
- for(let bot of bots){if(bot.dead)continue;let target=nearestGate(bot);let dx=0,dz=0;let playerD=dist(bot.x,bot.z,player.x,player.z);let brave=bot.h>=player.h*1.18&&playerD<Math.max(15,bot.h*3.0)&&!player.dead;let scared=player.h>=bot.h*1.6&&playerD<Math.max(18,player.h*2.4)&&!player.dead;
- // Rivalry near a gold core: same-size bots fight rather than ignore one another.
- const nearby=[player,...bots].filter(q=>q!==bot&&!q.dead&&q.h<=bot.h*1.4&&q.h>=bot.h*.66&&dist(bot.x,bot.z,q.x,q.z)<Math.max(7,bot.h*1.7));
- const competitor=target?.kind==='core'?nearby.sort((a,b)=>dist(bot.x,bot.z,a.x,a.z)-dist(bot.x,bot.z,b.x,b.z))[0]:null;if(scared){dx=bot.x-player.x;dz=bot.z-player.z}else if(brave){dx=player.x-bot.x;dz=player.z-bot.z;if(playerD<bot.h*.9&&bot.slash<=0)attack(bot,false)}else if(competitor){dx=competitor.x-bot.x;dz=competitor.z-bot.z;if(bot.slash<=0)attack(bot,false)}else if(target){dx=target.x-bot.x;dz=target.z-bot.z}else{dx=player.x-bot.x;dz=player.z-bot.z;if(playerD<bot.h)attack(bot,false)}const waypoint=detourAroundBridge(bot,bot.x+dx,bot.z+dz);moveCreature(bot,waypoint.x-bot.x,waypoint.z-bot.z,dt,(bot.id.charCodeAt(1)%3===0?1.03:.9));if(!collectCore(bot))gateCollision(bot)}
+ for(let bot of bots){
+  if(bot.dead)continue;
+  const target=nearestGate(bot),siege=siegeTarget(bot);
+  bot.focusId=siege?siege.id:null;
+  let dx=0,dz=0,playerD=dist(bot.x,bot.z,player.x,player.z);
+  const brave=bot.h>=player.h*1.18&&playerD<Math.max(15,bot.h*3)&&!player.dead;
+  const scared=player.h>=bot.h*1.6&&playerD<Math.max(18,player.h*2.4)&&!player.dead;
+  if(siege){
+   const order=Number(bot.id.slice(1))||0,angle=(order+.2)*TAU/5,flank=Math.max(5,siege.h*.57);
+   dx=siege.x+Math.cos(angle)*flank-bot.x;dz=siege.z+Math.sin(angle)*flank-bot.z;
+  }else{
+   const nearby=[player,...bots].filter(q=>q!==bot&&!q.dead&&q.h<=bot.h*1.4&&q.h>=bot.h*.66&&dist(bot.x,bot.z,q.x,q.z)<Math.max(7,bot.h*1.7));
+   const competitor=target?.kind==='core'?nearby.sort((a,b)=>dist(bot.x,bot.z,a.x,a.z)-dist(bot.x,bot.z,b.x,b.z))[0]:null;
+   if(scared){dx=bot.x-player.x;dz=bot.z-player.z;}
+   else if(brave){dx=player.x-bot.x;dz=player.z-bot.z;if(playerD<bot.h*.9&&bot.slash<=0)attack(bot,false);}
+   else if(competitor){dx=competitor.x-bot.x;dz=competitor.z-bot.z;if(bot.slash<=0)attack(bot,false);}
+   else if(target){dx=target.x-bot.x;dz=target.z-bot.z;}
+   else{dx=player.x-bot.x;dz=player.z-bot.z;if(playerD<bot.h)attack(bot,false);}
+  }
+  const waypoint=detourAroundBridge(bot,bot.x+dx,bot.z+dz);
+  moveCreature(bot,waypoint.x-bot.x,waypoint.z-bot.z,dt,(bot.id.charCodeAt(1)%3===0?1.03:.9));
+  if(siege&&!siege.dead){
+   const reach=Math.max(3.2,bot.h*.92)+siege.h*.25;
+   if(dist(bot.x,bot.z,siege.x,siege.z)<reach-1){
+    bot.face=Math.atan2(siege.x-bot.x,siege.z-bot.z);
+    if(bot.slash<=0)attack(bot,false);
+   }
+  }
+  if(!collectCore(bot))gateCollision(bot);
+ }
  if(!collectCore(player))gateCollision(player);for(let fx of stompFX)fx.t+=dt;stompFX=stompFX.filter(fx=>fx.t<fx.max);flash=Math.max(0,flash-dt*1.1);$('flash').style.opacity=flash*.4;
  if(elapsed>toastUntil){$('centerToast').style.opacity=0;$('centerToast').style.transform='translateY(8px)'}
  let live=bots.filter(b=>!b.dead).length+(!player.dead?1:0);$('aliveText').textContent=live;if(live===1&&!player.dead){finish(true);return}if(elapsed>=155){finish(!player.dead,'水位');return}
@@ -232,7 +292,7 @@ function render(){let w=canvas.clientWidth,h=canvas.clientHeight,dpr=Math.min(2,
  drawTerrain();drawBuildings();drawArches();for(let g of gates)if(dist(pos.x,pos.z,g.x,g.z)<Math.max(290,size*13))drawGate(g);for(let c of cores)if(!c.taken&&(c.dropped||c.k===player.stage)&&dist(pos.x,pos.z,c.x,c.z)<Math.max(290,size*13))drawCore(c);for(let b of bots)if(dist(pos.x,pos.z,b.x,b.z)<Math.max(290,size*13))drawChar(b);drawChar(player);drawEffects();gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.depthMask(false);drawWater();gl.depthMask(true);gl.disable(gl.BLEND);
 }
 function loop(t){let dt=last?Math.min(.08,(t-last)/1000):.016;last=t;step(dt);try{render()}catch(e){$('indicator').style.opacity=1;$('indicator').textContent='描画エラー: '+e.message;console.error(e)}requestAnimationFrame(loop)}reset();requestAnimationFrame(loop);
-window.GATE_GROW_TEST={getState:()=>({running,elapsed,sea,player:{x:player.x,z:player.z,h:player.h,stage:player.stage,health:player.health},gates:gates.length,cores:cores.length,coresRemaining:cores.filter(c=>!c.taken).length,coresTaken:player.coresTaken,ownedCoreIds:cores.filter(c=>c.owner===player.id).map(c=>c.id),selectedGateId,bots:bots.filter(b=>!b.dead).length,drawCount}),start:()=>{$('startBtn').click()},setPlayer:(x,z,stage)=>{player.x=x;player.z=z;if(stage!==undefined){player.stage=stage;player.h=2*Math.pow(2,stage)}},getCores:()=>cores.map(c=>({...c})),getGates:()=>gates.map(g=>({...g})),getBots:()=>bots.map(b=>({id:b.id,dead:b.dead,h:b.h,coresTaken:b.coresTaken})),testGrantBotCore:(id)=>{let b=bots.find(q=>q.id===id&&!q.dead),c=cores.find(q=>!q.taken);return b&&c?receiveCore(b,c,true):false},testDefeatBot:(id,withPlayer=true)=>{let b=bots.find(q=>q.id===id&&!q.dead);if(!b)return false;kill(b,withPlayer?player:null);return true}};
+window.GATE_GROW_TEST={getState:()=>({running,elapsed,sea,player:{x:player.x,z:player.z,h:player.h,stage:player.stage,health:player.health},gates:gates.length,cores:cores.length,coresRemaining:cores.filter(c=>!c.taken).length,coresTaken:player.coresTaken,ownedCoreIds:cores.filter(c=>c.owner===player.id).map(c=>c.id),selectedGateId,bots:bots.filter(b=>!b.dead).length,drawCount}),start:()=>{$('startBtn').click()},startSiege:()=>{$('siegeBtn').click()},getActors:()=>[player,...bots].map(q=>({id:q.id,h:q.h,x:q.x,z:q.z,dead:q.dead,health:q.health,cores:q.coresTaken,focusId:q.focusId})),tick:(frames=1)=>{for(let i=0;i<Math.min(frames,3000);i++)step(.05)},setPlayer:(x,z,stage)=>{player.x=x;player.z=z;if(stage!==undefined){player.stage=stage;player.h=2*Math.pow(2,stage)}},getCores:()=>cores.map(c=>({...c})),getGates:()=>gates.map(g=>({...g})),getBots:()=>bots.map(b=>({id:b.id,dead:b.dead,h:b.h,coresTaken:b.coresTaken})),testGrantBotCore:(id)=>{let b=bots.find(q=>q.id===id&&!q.dead),c=cores.find(q=>!q.taken);return b&&c?receiveCore(b,c,true):false},testDefeatBot:(id,withPlayer=true)=>{let b=bots.find(q=>q.id===id&&!q.dead);if(!b)return false;kill(b,withPlayer?player:null);return true}};
 })();
 </script>
 </body></html>
